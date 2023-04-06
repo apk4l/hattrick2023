@@ -16,12 +16,14 @@ import java.net.*;
 abstract public class GameClient implements GameClientInterface {
 
     static DatagramSocket socket, voiceSocket;
-    InetAddress serverAddress;
     int serverPort;
     int localPort;
     DatagramSocket serverSocket;
     GameListener callback;
     String localAddress;
+    String serverAdd;
+    String clientAdd = "";
+    MyServer server;
 
     public GameClient(GameListener callback, String localAddress, int localPort) {
         this.callback = callback;
@@ -66,14 +68,23 @@ abstract public class GameClient implements GameClientInterface {
         this.callback = callback;
     }
 
+    public void setClient(String clientAddNew) {
+        clientAdd = clientAddNew;
+        Gdx.app.log("GameClient", "Set client Address to" + clientAdd); // Log sent message
+    }
+    public void setServer(String serverAddNew) {
+        serverAdd = serverAddNew;
+        Gdx.app.log("GameClient", "Set server Address to" + serverAdd); // Log sent message
+    }
+
     @Override
     public void sendMessage(String message) {
         try {
             byte[] sendData = message.getBytes();
-            InetAddress serverAddress = InetAddress.getByName("192.168.50.5"); // Replace with the client's IP address
+            InetAddress serverAddress = InetAddress.getByName(clientAdd); // Replace with the client's IP address
+
             int serverPort = 45351; // Replace with the client's port
             DatagramPacket sendPacket = new DatagramPacket(sendData, sendData.length, serverAddress, serverPort);
-
             // Add debug logs
             Gdx.app.log(DeviceAPI.TAG, "Sending message: " + message);
             Gdx.app.log(DeviceAPI.TAG, "Message length: " + sendData.length);
@@ -91,7 +102,7 @@ abstract public class GameClient implements GameClientInterface {
         try {
         //   if (isConnected()) {
                 byte[] sendData = message.getBytes();
-                InetAddress serverAddress = InetAddress.getByName("192.168.50.54"); // Replace with the client's IP address
+                InetAddress serverAddress = InetAddress.getByName(serverAdd); // Replace with the client's IP address
                 int serverPort = 45351; // Replace with the client's port
                 DatagramPacket sendPacket = new DatagramPacket(sendData, sendData.length, serverAddress, serverPort);
 
@@ -106,7 +117,7 @@ abstract public class GameClient implements GameClientInterface {
           //      Gdx.app.log(DeviceAPI.TAG, "Not connected, cannot send message");
            // }
         } catch (IOException io) {
-            Gdx.app.log(DeviceAPI.TAG, "Failed to send message");
+            Gdx.app.log(DeviceAPI.TAG, "Failed to send message" + serverAdd);
         }
     }
 

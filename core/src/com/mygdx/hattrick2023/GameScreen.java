@@ -254,7 +254,7 @@ public class GameScreen implements Screen, GameListener {
             float lerpFactor = 0.9f; // Adjust this value to control the smoothness of the reconciliation
             puck.x = predictedPuckPosition.x * (1 - lerpFactor) + lastReceivedPuckPosition.x * lerpFactor;
             puck.y = predictedPuckPosition.y * (1 - lerpFactor) + lastReceivedPuckPosition.y * lerpFactor;
-            puck.update2(lastReceivedPuckPosition.x, lastReceivedPuckPosition.y, lastReceivedPuckVelocity.x, lastReceivedPuckVelocity.y);
+            puck.update2(puck.x, puck.y, lastReceivedPuckVelocity.x, lastReceivedPuckVelocity.y);
 
         } else {
             puck.update();

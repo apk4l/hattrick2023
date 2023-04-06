@@ -21,6 +21,9 @@ public class MyServer extends GameClient {
     private boolean player1Connected = false;
     private boolean player2Connected = false;
 
+    String clientAdd = "";
+    String serverAdd;
+
     //  private static ServerSocket serverSocket, voiceServer;
 
     public MyServer(GameListener callback, String localAddress, int localPort, Game game, DeviceAPI mController, int PLAYERNUMBER) {
@@ -29,6 +32,8 @@ public class MyServer extends GameClient {
         this.mController = mController;
         this.messagesToSend = new ArrayList<>();
         this.playerNumber = PLAYERNUMBER;
+        serverAdd = "";
+        clientAdd = "";
         try {
             serverSocket = new DatagramSocket();
         } catch (SocketException e) {
@@ -76,6 +81,8 @@ public class MyServer extends GameClient {
         private final DeviceAPI mController;
         private final GameClient gameClient;
 
+        private volatile boolean keepSendingHello = true;
+
         public NormalServerThread(Game game, DeviceAPI mController, GameClient gameClient) {
             this.game = game;
             this.mController = mController;
@@ -88,46 +95,97 @@ public class MyServer extends GameClient {
             Thread receiveThread = new Thread(new ReceiveThread());
             receiveThread.start();
 
+            // Start a new thread to send Hello messages using the new Runnable class
+            Thread sendHelloThread = new Thread(new SendHelloRunnable(this));
+            sendHelloThread.start();
+
             try {
+
                 while (!serverSocket.isClosed()) {
-                    if (getPlayerNumber() == 2) {
-                        gameClient.sendMessage2("Hello");
-                    }
                     byte[] receiveData = new byte[1024];
                     DatagramPacket receivePacket = new DatagramPacket(receiveData, receiveData.length);
                     serverSocket.receive(receivePacket);
-
-
                     String receivedMessage = new String(receivePacket.getData(), 0, receivePacket.getLength());
-                    Gdx.app.log("MyServer", "Received message: " + receivedMessage); // Log received message
-                    if (receivedMessage.equals("Hello")) {
-                        byte[] sendData = "Hello back".getBytes();
-                        DatagramPacket sendPacket = new DatagramPacket(sendData, sendData.length,
-                                receivePacket.getAddress(), receivePacket.getPort());
-                        serverSocket.send(sendPacket);
-                        Gdx.app.log("MyServer", "Sent 'Hello back' to the client"); // Log sent message
-                        player2Connected = true;
+                    if (getPlayerNumber() == 2) {
+                            if (receivedMessage.equals("Hello back")) {
+                                Gdx.app.log("Client", "Received Hello Back from server"); // Log sent message
+                                player2Connected = true;
+                                callback.onConnected();
+                                // Save the IP address for future communication
+                                serverAdd = receivePacket.getAddress().getHostAddress();
+                                gameClient.setServer(serverAdd);
+                                Gdx.app.log("Client", "connected"); // Log sent message
+                                keepSendingHello = false; // Stop sending "Hello" messages
+
+                            }
+
+                    } else if (getPlayerNumber() == 1) {
+
+                        Gdx.app.log("MyServer", "Received message: " + receivedMessage); // Log received message
+
+                        if (receivedMessage.equals("Hello")) {
+                            byte[] sendData = "Hello back".getBytes();
+                            DatagramPacket sendPacket = new DatagramPacket(sendData, sendData.length,
+                                    receivePacket.getAddress(), receivePacket.getPort());
+                            clientAdd = receivePacket.getAddress().getHostAddress();
+                            gameClient.setClient(clientAdd);
+                            serverSocket.send(sendPacket);
+                            Gdx.app.log("MyServer", "Sent 'Hello back' to the client"); // Log sent message
+                            player1Connected = true;
+                            callback.onConnected();
+
+                        }
+
 
                     }
-                    callback.onConnected();
-                        // Process other received packets here.
-                        callback.onMessageReceived(receiveData, receivePacket.getLength());
-                        Gdx.app.log("MyServer", "Packet sent to callback: " + receivedMessage);
-                    }
-
-
-            } catch (Exception e) {
-                throw new RuntimeException(e);
+                    // Process other received packets here.
+                    callback.onMessageReceived(receiveData, receivePacket.getLength());
+                    Gdx.app.log("Packet", "Packet sent to callback: " + receivedMessage);
+                }
+            } catch (IOException e) {
+                e.printStackTrace();
 
             } finally {
                 // The following lines should be outside the loop, but inside the run() method.
                 callback.onDisconnected();
             }
         }
+        public class SendHelloRunnable implements Runnable {
+            private final NormalServerThread normalServerThread;
 
+            public SendHelloRunnable(NormalServerThread normalServerThread) {
+                this.normalServerThread = normalServerThread;
+            }
 
+            @Override
+            public void run() {
+                normalServerThread.sendHelloMessages();
+            }
+        }
+        public void sendHelloMessages() {
+            try {
+                if (getPlayerNumber() == 2) {
+                    // Get the local IP address
+                    InetAddress localIP = InetAddress.getByName(localAddress);
+                    // Extract the subnet from the IP address
+                    String subnet = localIP.getHostAddress().substring(0, localIP.getHostAddress().lastIndexOf('.') + 1);
 
+                    // Loop through all possible IPs on the local subnet
+                    for (int i = 1; i <= 254 && keepSendingHello; i++) {
+                        InetAddress targetIP = InetAddress.getByName(subnet + i);
+                        byte[] sendData = "Hello".getBytes();
+                        DatagramPacket sendPacket = new DatagramPacket(sendData, sendData.length, targetIP, 45351);
+                        serverSocket.send(sendPacket);
+                        Gdx.app.log("Client", "Sent hello packet to " + targetIP); // Log received message
+                    }
+                }
+            } catch (IOException e) {
+                e.printStackTrace();
+            }
+        }
     }
+
+
 
 
     @Override

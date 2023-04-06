@@ -46,7 +46,7 @@ public class MainMenuScreen implements Screen, GameListener {
     private Skin skin;
     private Stage stage, cancelStage;
     private boolean hideButtons;
-
+    Texture backgroundTexture;
 
     private DeviceAPI mController;
 
@@ -55,7 +55,7 @@ public class MainMenuScreen implements Screen, GameListener {
     public MainMenuScreen(Game game, DeviceAPI mController) {
         this.game = game;
         batch = new SpriteBatch();
-
+        backgroundTexture = new Texture(Gdx.files.internal("menuBackground.png"));
         guiCam = new OrthographicCamera(GAME_WIDTH, GAME_HEIGHT);
         guiCam.setToOrtho(false);
         guiCam.position.set(0, 0, 0);
@@ -170,7 +170,7 @@ public class MainMenuScreen implements Screen, GameListener {
                 }
             } else {
                 if (cancelBounds.contains(touchpoint.x, touchpoint.y)) {
-                    gameClient.cancel();
+                    //gameClient.cancel();
                     hideButtons = false;
                 }
             }
@@ -178,9 +178,10 @@ public class MainMenuScreen implements Screen, GameListener {
     }
 
     private void draw() {
-        Gdx.gl.glClearColor(1, 0, 0, 1);
         Gdx.gl.glClear(GL20.GL_COLOR_BUFFER_BIT);
-
+        batch.begin();
+        batch.draw(backgroundTexture, 0, 0, Gdx.graphics.getWidth(), Gdx.graphics.getHeight());
+        batch.end();
         if (!hideButtons) {
             stage.act();
             stage.draw();

@@ -15,7 +15,7 @@ import java.net.*;
  */
 abstract public class GameClient implements GameClientInterface {
 
-    static DatagramSocket socket, voiceSocket;
+    static DatagramSocket socket;
     int serverPort;
     int localPort;
     DatagramSocket serverSocket;

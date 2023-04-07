@@ -4,6 +4,7 @@ import com.badlogic.gdx.Game;
 import com.badlogic.gdx.Gdx;
 import com.badlogic.gdx.Input;
 import com.badlogic.gdx.Screen;
+import com.badlogic.gdx.ai.btree.Task;
 import com.badlogic.gdx.audio.Sound;
 import com.badlogic.gdx.graphics.GL20;
 import com.badlogic.gdx.graphics.OrthographicCamera;
@@ -18,9 +19,11 @@ import com.badlogic.gdx.utils.Timer;
 import com.badlogic.gdx.utils.viewport.StretchViewport;
 import com.badlogic.gdx.utils.viewport.Viewport;
 
+
 import java.util.Arrays;
 import java.util.HashMap;
 import java.util.Map;
+import java.util.TimerTask;
 
 /**
  * Created by Administrator on 15-Nov-16.
@@ -29,16 +32,17 @@ public class GameScreen implements Screen, GameListener {
 
     private int myPlayerNumber; // added field
     private DeviceAPI mController;
-
+    private float accumulator = 0f;
+    private float fixedTimeStep = 1 / 60f; // 60 updates per second
     private GameClientInterface gameClient;
     public void MyGdxGame(DeviceAPI mController) {
         this.mController = mController;
     }
 
     private Game game;
-
+    private float updateTimer = 0;
+    private float updateRate = 1 / 500f; // 60 updates per second
     private MyServer myServer;
-    private MyClient2 myClient2;
     private OrthographicCamera guiCam;
     private SpriteBatch batch;
     private Vector3 touchPoint;
@@ -58,15 +62,16 @@ public class GameScreen implements Screen, GameListener {
     private Map<Integer, Sprite> spriteMap;
 
     private boolean yDown;
-    private MyClient myClient;
     private Vector2 lastReceivedPuckPosition = new Vector2();
     private Vector2 lastReceivedPuckVelocity = new Vector2();
     private float lastReceivedPuckTime = 0;
     private Vector2 predictedPuckPosition = new Vector2();
     private Vector2 predictedPuckVelocity = new Vector2();
     private float predictedPuckTime = 0;
+    private float puckSyncTime;
+    private float puckSyncInterval = .002f; // Send the puck data every 3 seconds
 
-    MyClient2 client2;
+
     public GameScreen(Game game, DeviceAPI mController, GameClientInterface gameClient) {
         this.game = game;
         this.mController = mController;;
@@ -135,8 +140,19 @@ public class GameScreen implements Screen, GameListener {
     public void render(float delta) {
         Gdx.gl.glClearColor(1, 0, 0, 1);
         Gdx.gl.glClear(GL20.GL_COLOR_BUFFER_BIT);
+      //  if (gameClient.getPlayerNumber() ==  1) {
+      //      puckSyncTime += delta;
+      //      if (puckSyncTime >= puckSyncInterval) {
+      //          sendPuckDataToClient(puck.x, puck.y, puck.velocity.i, puck.velocity.j);
+      //          puckSyncTime = 0;
+       //     }
+      //  }
 
-        update(delta);
+        accumulator += delta;
+        while (accumulator >= fixedTimeStep) {
+            update(fixedTimeStep);
+            accumulator -= fixedTimeStep;
+        }
 
         batch.begin();
         draw();
@@ -190,11 +206,11 @@ public class GameScreen implements Screen, GameListener {
         }
 
 
-
+        checkCollision(myPlayer, puck);
+        checkCollision(otherPlayer, puck);
 
         if (Gdx.input.isTouched()) {
             guiCam.unproject(touchPoint.set(Gdx.input.getX(), Gdx.input.getY(), 0));
-
 
 
             if (draggingPlayer == null && myPlayer.getBounds().contains(touchPoint.x, touchPoint.y)) {
@@ -207,6 +223,20 @@ public class GameScreen implements Screen, GameListener {
                 guiCam.unproject(touchPoint.set(Gdx.input.getX(), Gdx.input.getY(), 0));
                 float newX = touchPoint.x - dragOffset1.x;
                 float newY = touchPoint.y - dragOffset1.y;
+                if (gameClient.getPlayerNumber() == PLAYER1) {
+
+
+                    gameClient.sendMessage(myPlayer.x * GAME_WIDTH / SCREEN_WIDTH
+                            + "," + myPlayer.y * GAME_HEIGHT / SCREEN_HEIGHT
+                            + "," + puck.x * GAME_WIDTH / SCREEN_WIDTH
+                            + "," + puck.y * GAME_HEIGHT / SCREEN_HEIGHT);
+
+                }
+                if (gameClient.getPlayerNumber() == PLAYER2) {
+                    gameClient.sendMessage2(myPlayer.x * GAME_WIDTH / SCREEN_WIDTH + "," +
+                            myPlayer.y * GAME_HEIGHT / SCREEN_HEIGHT);
+
+                }
 
                 myPlayer.update(newX, newY);
             }
@@ -221,11 +251,7 @@ public class GameScreen implements Screen, GameListener {
 
 
 
-            if (gameClient.getPlayerNumber() == PLAYER2) {
-                    gameClient.sendMessage2(myPlayer.x * GAME_WIDTH / SCREEN_WIDTH + "," +
-                            myPlayer.y * GAME_HEIGHT / SCREEN_HEIGHT);
 
-                }
             }
 
             String s = touchPoint.x + ", " + touchPoint.y;
@@ -234,33 +260,40 @@ public class GameScreen implements Screen, GameListener {
 
 
 
-        if (gameClient.getPlayerNumber() == PLAYER1) {
-            checkCollision(myPlayer, puck);
-            checkCollision(otherPlayer, puck);
-            gameClient.sendMessage(myPlayer.x * GAME_WIDTH / SCREEN_WIDTH
-                   + "," + myPlayer.y * GAME_HEIGHT / SCREEN_HEIGHT
-                   + "," + puck.x * GAME_WIDTH / SCREEN_WIDTH
-                   + "," + puck.y * GAME_HEIGHT / SCREEN_HEIGHT);
-        }
+
 
         if (gameClient.getPlayerNumber() == PLAYER2) {
             checkCollisionPlayer2(myPlayer, puck);
-            // Update the predicted puck position and velocity
+         //    Update the predicted puck position and velocity
             predictedPuckTime += delta;
-            predictedPuckPosition.x += predictedPuckVelocity.x + delta;
+            predictedPuckPosition.x += predictedPuckVelocity.x * delta;
             predictedPuckPosition.y += predictedPuckVelocity.y * delta;
 
             // Reconcile the predicted and received puck positions
-            float lerpFactor = 0.9f; // Adjust this value to control the smoothness of the reconciliation
-            puck.x = predictedPuckPosition.x * (1 - lerpFactor) + lastReceivedPuckPosition.x * lerpFactor;
-            puck.y = predictedPuckPosition.y * (1 - lerpFactor) + lastReceivedPuckPosition.y * lerpFactor;
-            puck.update2(puck.x, puck.y, lastReceivedPuckVelocity.x, lastReceivedPuckVelocity.y);
+            float lerpFactor = 1.8f; // Adjust this value to control the smoothness of the reconciliation
+
 
         } else {
-            puck.update();
-        }
 
+        }
+        if (gameClient.getPlayerNumber() ==  1) {
+            puckSyncTime += delta;
+            if (puckSyncTime >= puckSyncInterval) {
+                gameClient.sendMessage(myPlayer.x * GAME_WIDTH / SCREEN_WIDTH
+                        + "," + myPlayer.y * GAME_HEIGHT / SCREEN_HEIGHT
+                        + "," + puck.x * GAME_WIDTH / SCREEN_WIDTH
+                        + "," + puck.y * GAME_HEIGHT / SCREEN_HEIGHT
+                        + "," + puck.velocity.i * GAME_WIDTH / SCREEN_WIDTH
+                        + "," + puck.velocity.j * GAME_HEIGHT / SCREEN_HEIGHT);
+                puckSyncTime = 0;
+
+            }
+        }
+        puck.update();
     }
+
+
+
 
 
     public void checkCollision(Player player, Puck puck) {
@@ -286,6 +319,7 @@ public class GameScreen implements Screen, GameListener {
             puck.y = newPuck.y;
         }
     }
+
 
     @Override
     public void onConnected() {
@@ -332,23 +366,20 @@ public class GameScreen implements Screen, GameListener {
                     otherPlayer.y = Float.parseFloat(tokens[1]) * SCREEN_HEIGHT / GAME_HEIGHT;
                     lastReceivedPuckPosition.set(Float.parseFloat(tokens[2]) * SCREEN_WIDTH / GAME_WIDTH,
                             Float.parseFloat(tokens[3]) * SCREEN_HEIGHT / GAME_HEIGHT);
+                    lastReceivedPuckVelocity.set(Float.parseFloat(tokens[4]),
+                            Float.parseFloat(tokens[5]));
                     lastReceivedPuckTime = 0;
-
-                    // Set the predicted puck position and velocity
-                    predictedPuckPosition.set(lastReceivedPuckPosition);
-                    predictedPuckVelocity.set(lastReceivedPuckVelocity);
-                    predictedPuckTime = 0;
+                    puck.remoteUpdate(lastReceivedPuckPosition.x, lastReceivedPuckPosition.y, lastReceivedPuckVelocity.x, lastReceivedPuckVelocity.y);
                 }
                 Gdx.app.log("GameScreen", "Updating otherPlayer position to: (" + mirroredX + ", " + mirroredY + ")");
                 Gdx.app.log("GameScreen", "Updating lastReceivedPuckPosition to: (" + lastReceivedPuckPosition.x + ", " + lastReceivedPuckPosition.y + ")");
                 Gdx.app.log("GameScreen", "Updating predictedPuckPosition to: (" + predictedPuckPosition.x + ", " + predictedPuckPosition.y + ")");
             }
-            } catch(Exception e){
-                Gdx.app.error("GameScreen", "Exception caught while parsing message", e);
-            }
+        } catch(Exception e){
+            Gdx.app.error("GameScreen", "Exception caught while parsing message", e);
+        }
 
     }
-
 
     @Override
     public DeviceAPI getDeviceAPI() {
@@ -398,15 +429,31 @@ public class GameScreen implements Screen, GameListener {
             this.y = y;
         }
 
+
+        public void remoteUpdate(double x, double y, double velI, double velJ) {
+            this.x = x;
+            this.y = y;
+            this.velocity.i = velI;
+            this.velocity.j = velJ;
+        }
+
         public void draw() {
             puckSprite.setPosition((float) x - getWidth() / 2, (float) y - getHeight() / 2);
             puckSprite.draw(batch);
         }
 
         public void update() {
-            double minVelocity = 6; // adjust as necessary
-            x += velocity.i *= .999;
-            y += velocity.j *= .999;
+            double minVelocity = 2; // adjust as necessary
+            double maxVelocity = 9; // adjust as necessary
+
+            velocity.i *= (double) SCREEN_WIDTH / GAME_WIDTH;
+            velocity.j *= (double) SCREEN_HEIGHT / GAME_HEIGHT;
+
+            x += velocity.i *= .99;
+            y += velocity.j *= .99;
+
+            velocity.i /= (double) SCREEN_WIDTH / GAME_WIDTH;
+            velocity.j /= (double) SCREEN_HEIGHT / GAME_HEIGHT;
 
             // check if velocity falls below minimum threshold
             if (Math.hypot(velocity.i, velocity.j) < minVelocity) {
@@ -414,6 +461,14 @@ public class GameScreen implements Screen, GameListener {
                 double angle = Math.atan2(velocity.j, velocity.i);
                 velocity.i = minVelocity * Math.cos(angle);
                 velocity.j = minVelocity * Math.sin(angle);
+            }
+
+            // check if velocity exceeds maximum threshold
+            if (Math.hypot(velocity.i, velocity.j) > maxVelocity) {
+                // decrease velocity to maximum threshold
+                double angle = Math.atan2(velocity.j, velocity.i);
+                velocity.i = maxVelocity * Math.cos(angle);
+                velocity.j = maxVelocity * Math.sin(angle);
             }
 
             // bounce off left wall
@@ -487,90 +542,19 @@ public class GameScreen implements Screen, GameListener {
             }
         }
 
-        void update2(double newX, double newY, double i, double j) {
-            velocity.i = i;
-            velocity.j = j;
-
-            x = newX;
-            y = newY;
-
-            // bounce off left wall
-            if (x <= radius + 70) {
-                velocity.i = Math.abs(velocity.i); //bounce
-                x = radius + 70;
-            //    edgeHitSound.play();
-            }
-
-
-            // bounce off right wall
-            if (x >= SCREEN_WIDTH - (radius + 70)) {
-                velocity.i = -Math.abs(velocity.i);
-                x = SCREEN_WIDTH - (radius + 70);
-             //   edgeHitSound.play();
-            }
-
-            // bounce off bottom
-            if (y <= (radius + 100)) {
-
-
-                // goal
-                if (x >= leftBound && x <= rightBound) {
-                    goalSound.play();
-                    reset();
-
-                    if (!yDown) {
-                        otherPlayer.score++;
-                        otherPlayer.updateScore();
-                    } else {
-                        myPlayer.score++;
-                        myPlayer.updateScore();
-                    }
-//                    setPlayer2ScorePosition();
-                } else {
-                    velocity.j = Math.abs(velocity.j);
-                    y = radius;
-                 //   edgeHitSound.play();
-                }
-            }
-            int bottomBuffer = 0;
-            // bounce off top for Player 1 or bottom for Player 2
-
-            if (yDown) {
-                bottomBuffer = 160;
-            } else {
-                bottomBuffer = 160;
-            }
-            // bounce off top for Player 1 or bottom for Player 2
-            if (y >= SCREEN_HEIGHT - (radius + bottomBuffer)) {
-
-
-                //goal
-                if (x >= leftBound && x <= rightBound) {
-                    goalSound.play();
-                    reset();
-
-                    if (!yDown) {
-                        myPlayer.score++;
-                        myPlayer.updateScore();
-                    } else {
-                        otherPlayer.score++;
-                        otherPlayer.updateScore();
-                    }
-//                    setPlayer1ScorePosition();
-                } else {
-                    velocity.j = -Math.abs(velocity.j);
-                    y = SCREEN_HEIGHT - (radius + bottomBuffer);
-                  //  edgeHitSound.play();
-                }
-            }
-        }
-
         void reset() {
             velocity.i = 0;
             velocity.j = 0;
 
             x = SCREEN_WIDTH / 2;
             y = SCREEN_HEIGHT / 2;
+            if (!yDown) {
+                myPlayer.update(SCREEN_WIDTH / 2, offset);
+                otherPlayer.update(SCREEN_WIDTH / 2, SCREEN_HEIGHT - offset);
+            } else {
+                myPlayer.update(SCREEN_WIDTH / 2, SCREEN_HEIGHT - offset);
+                otherPlayer.update(SCREEN_WIDTH / 2, offset);
+            }
         }
 
         private long lastCollisionTime = 0;
@@ -579,10 +563,11 @@ public class GameScreen implements Screen, GameListener {
         public boolean checkCollision(Player p){
             long currentTime = System.currentTimeMillis();
 
-            if (currentTime - lastCollisionTime > COLLISION_COOLDOWN &&
-                    Math.pow(x - p.x, 2) + Math.pow(y - p.y, 2) <= Math.pow(p.radius + radius, 2)) {
-                playerHitSound.play();
 
+                if  (Math.pow(x - p.x, 2) + Math.pow(y - p.y, 2) <= Math.pow(p.radius + radius, 2)) {
+                if (currentTime - lastCollisionTime > COLLISION_COOLDOWN) {
+                    playerHitSound.play();
+                }
                 Vector2d collisionDirection = new Vector2d(x - p.x, y - p.y);
                 velocity = p.velocity.proj(collisionDirection).plus(velocity.proj(collisionDirection).times(-1)
                         .plus(velocity.proj(new Vector2d(collisionDirection.j, -collisionDirection.i)))).times(0.9);
@@ -593,22 +578,14 @@ public class GameScreen implements Screen, GameListener {
             return false;
         }
 
-        public void remoteCollision(float puckX, float puckY, float playerX,  float playerY, Player p) {
-            long currentTime = System.currentTimeMillis();
-            Vector2d collisionDirection = new Vector2d(puckX - playerX, puckY - playerY);
-            if (currentTime - lastCollisionTime > COLLISION_COOLDOWN &&
-                    Math.pow(puckX - playerX, 2) + Math.pow(puckY - playerY, 2) <= Math.pow(p.radius + radius, 2)) {
 
-                lastCollisionTime = currentTime;
-            }
-        }
         public boolean checkCollisionPlayer2(Player p){
             long currentTime = System.currentTimeMillis();
 
-            if (currentTime - lastCollisionTime > COLLISION_COOLDOWN &&
-                    Math.pow(x - p.x, 2) + Math.pow(y - p.y, 2) <= Math.pow(p.radius + radius, 2)) {
-                playerHitSound.play();
-
+           if (Math.pow(x - p.x, 2) + Math.pow(y - p.y, 2) <= Math.pow(p.radius + radius, 2)) {
+                if (currentTime - lastCollisionTime > COLLISION_COOLDOWN) {
+                   playerHitSound.play();
+               }
                 lastCollisionTime = currentTime;
                 return true;
             }
@@ -641,6 +618,7 @@ public class GameScreen implements Screen, GameListener {
                     (float) (radius * 1.5));
 
             updateScore();
+
         }
 
         public Rectangle getBounds() {
